@@ -17,6 +17,11 @@ public class Message {
         String TYPE_DATA = "data";
 
         /**
+         * 广播消息
+         */
+        String TYPE_BROADCAST = "broadcast";
+
+        /**
          * 心跳消息
          */
         String TYPE_NOOP = "noop";

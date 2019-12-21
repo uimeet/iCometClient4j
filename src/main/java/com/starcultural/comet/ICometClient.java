@@ -310,6 +310,7 @@ public class ICometClient {
                         mICometCallback.onMsgArrived(msg);
 
                         switch (msg.type) {
+                            case Message.Type.TYPE_BROADCAST:
                             case Message.Type.TYPE_DATA:
                                 // 递增消息位置
                                 mChannel.seq++;
