@@ -323,6 +323,7 @@ public class ICometClient {
                                     mICometCallback.onMsgFormatError(msg);
                                 }
                                 break;
+                            case Message.Type.TYPE_NEXT_SEQ:
                             case Message.Type.TYPE_NOOP:
                                 // 心跳消息，不需要做任何处理
                                 break;
