@@ -262,7 +262,7 @@ public class ICometClient {
             sb.append(mConf.enableSSL ? "https://" : "http://");
         }
         sb.append(this.mConf.host);
-        if (this.mConf.port > 0) {
+        if (this.mConf.port > 0 && this.mConf.port != 80 && this.mConf.port != 443) {
             sb.append(":").append(this.mConf.port);
         }
         if (!isEmpty(url)) {
