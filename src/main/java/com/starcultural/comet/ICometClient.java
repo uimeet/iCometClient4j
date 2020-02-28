@@ -54,7 +54,7 @@ public class ICometClient {
     /**
      * 与服务端断开后的重连间隔
      */
-    private static final int[] DELAY = {5, 30, 60};
+    private static final int[] DELAY = {1, 2, 3};
 
     // 连接服务端使用的完整 url
     private String finalUrl;
