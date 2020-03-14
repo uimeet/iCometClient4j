@@ -78,7 +78,7 @@ public class ICometClient {
     // 当前状态
     private int mStatus = State.STATE_NEW;
 
-    private ICometClient() {
+    public ICometClient() {
 
     }
 
@@ -107,7 +107,9 @@ public class ICometClient {
             mLogger.info("[prepare]use DefaultChannelAllocator");
         }
         mConf = conf;
-        this.mChannel = conf.channelAllocator.allocate();
+        if (mReconnTimes == 0) {
+            this.mChannel = conf.channelAllocator.allocate();
+        }
         this.finalUrl = buildURL(conf.url);
         this.mICometCallback = conf.iCometCallback;
         this.mIConnCallback = conf.iConnCallback;
@@ -190,7 +192,7 @@ public class ICometClient {
             mLogger.info("[stopConnect]disconnect");
             mConn.disconnect();
             mConn = null;
-            mReconnTimes = 0;
+            mRe
         }
     }
 
