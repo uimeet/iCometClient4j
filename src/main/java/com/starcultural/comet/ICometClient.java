@@ -107,9 +107,7 @@ public class ICometClient {
             mLogger.info("[prepare]use DefaultChannelAllocator");
         }
         mConf = conf;
-        if (mReconnTimes == 0) {
-            this.mChannel = conf.channelAllocator.allocate();
-        }
+        this.mChannel = conf.channelAllocator.allocate();
         this.finalUrl = buildURL(conf.url);
         this.mICometCallback = conf.iCometCallback;
         this.mIConnCallback = conf.iConnCallback;
