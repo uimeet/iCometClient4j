@@ -192,6 +192,7 @@ public class ICometClient {
             mLogger.info("[stopConnect]disconnect");
             mConn.disconnect();
             mConn = null;
+            mReconnTimes = 0;
         }
     }
 
