@@ -247,7 +247,9 @@ public class ICometClient {
      */
     private void disconnect() {
         mStatus = ICometClient.State.STATE_DISCONNECT;
-        mIConnCallback.onDisconnect();
+        if (mIConnCallback != null) {
+            mIConnCallback.onDisconnect();
+        }
     }
 
     /**
