@@ -63,7 +63,6 @@ public class ICometClient {
     // 频道对象实例
     private Channel mChannel;
 
-    private static ICometClient mClient = new ICometClient();
     private ICometCallback mICometCallback;
     private IConnectionCallback mIConnCallback;
 
@@ -77,22 +76,6 @@ public class ICometClient {
 
     // 当前状态
     private int mStatus = State.STATE_NEW;
-
-    public ICometClient() {
-
-    }
-
-    /**
-     * 获取 ICometClient 的实例
-     *
-     * @return
-     */
-    public static ICometClient getInstance() {
-        if (mClient == null) {
-            mClient = new ICometClient();
-        }
-        return mClient;
-    }
 
     /**
      * 准备连接
@@ -356,12 +339,12 @@ public class ICometClient {
                 }
             } catch (TokenRefreshException tre) {
                 mLogger.info("[SubThread]Token Refreshed!");
-                mClient.disconnect();
+                disconnect();
                 reconnect(true);
                 return;
             }catch (Exception e) {
                 e.printStackTrace();
-                mClient.disconnect();
+                disconnect();
                 mLogger.info("[SubThread]status change to [DISCONNECT], reconnecting...");
                 reconnect();
                 return;
