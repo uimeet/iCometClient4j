@@ -171,6 +171,7 @@ public class ICometClient {
      * 断开与服务端的连接
      */
     public void stopConnect() {
+        mStatus = State.STATE_DISCONNECT;
         if (mConn != null) {
             mLogger.info("[stopConnect]disconnect");
             mConn.disconnect();
@@ -198,6 +199,11 @@ public class ICometClient {
     private void reconnect(boolean immediate) {
         mLogger.info("[reconnect]call");
         if (mIConnCallback == null) {
+            mLogger.info("[mIConnCallback == null]exit reconnect");
+            return;
+        }
+        if (mStatus == State.STATE_DISCONNECT) {
+            mLogger.info("[mStats == State.STATE_DISCONNECT] exit reconnect");
             return;
         }
 
