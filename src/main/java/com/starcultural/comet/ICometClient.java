@@ -171,7 +171,6 @@ public class ICometClient {
      * 断开与服务端的连接
      */
     public void stopConnect() {
-        mStatus = State.STATE_DISCONNECT;
         if (mConn != null) {
             mLogger.info("[stopConnect]disconnect");
             mConn.disconnect();
@@ -194,6 +193,7 @@ public class ICometClient {
 
     /**
      * 当连接丢失或发生错误时重连服务端
+     *
      * @param immediate 是否立即重连
      */
     private void reconnect(boolean immediate) {
@@ -202,17 +202,17 @@ public class ICometClient {
             mLogger.info("[mIConnCallback == null]exit reconnect");
             return;
         }
-        if (mStatus == State.STATE_DISCONNECT) {
-            mLogger.info("[mStats == State.STATE_DISCONNECT] exit reconnect");
-            return;
-        }
+//        if (mStatus == State.STATE_DISCONNECT) {
+//            mLogger.info("[mStats == State.STATE_DISCONNECT] exit reconnect");
+//            return;
+//        }
 
         TimerTask task = new TimerTask() {
 
             @Override
             public void run() {
-                mReconnTimes++;
                 if (!mIConnCallback.onReconnect(mReconnTimes)) {
+                    mReconnTimes++;
                     if (mStatus != State.STATE_READY) {
                         prepare(mConf);
                     }
@@ -348,7 +348,7 @@ public class ICometClient {
                 disconnect();
                 reconnect(true);
                 return;
-            }catch (Exception e) {
+            } catch (Exception e) {
                 e.printStackTrace();
                 disconnect();
                 mLogger.info("[SubThread]status change to [DISCONNECT], reconnecting...");
