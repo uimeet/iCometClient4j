@@ -62,6 +62,7 @@ public class ICometClient {
     private int mReconnTimes = 0;
     // 频道对象实例
     private Channel mChannel;
+    private SubThread mSubThread;
 
     private ICometCallback mICometCallback;
     private IConnectionCallback mIConnCallback;
@@ -155,7 +156,11 @@ public class ICometClient {
         }
         this.mStatus = State.STATE_COMET;
         mLogger.info("[comet]status change to [COMET]");
-        new SubThread().start();
+
+        if (this.mSubThread == null) {
+            this.mSubThread = new SubThread();
+        }
+        this.mSubThread.start();
 
     }
 
@@ -165,6 +170,9 @@ public class ICometClient {
     public void stopComet() {
         mStatus = State.STATE_STOP_PENDING;
         mLogger.info("[stopComet]status change to [STOP_PENDING]");
+        // 停止线程
+        this.mSubThread.interrupt();
+        this.mSubThread = null;
     }
 
     /**
