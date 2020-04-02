@@ -68,10 +68,11 @@ public class Message {
 
         public int type;
         public JsonObject body;
+        public String id;
 
         @Override
         public String toString() {
-            return String.format("Content [type: %s, body: %s]", type, body);
+            return String.format("Content [id: %s, type: %s, body: %s]", id, type, body);
         }
 
     }
