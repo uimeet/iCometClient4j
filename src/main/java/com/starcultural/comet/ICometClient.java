@@ -62,7 +62,6 @@ public class ICometClient {
     private int mReconnTimes = 0;
     // 频道对象实例
     private Channel mChannel;
-    private SubThread mSubThread;
 
     private ICometCallback mICometCallback;
     private IConnectionCallback mIConnCallback;
@@ -114,8 +113,8 @@ public class ICometClient {
         try {
             mConn = (HttpURLConnection) new URL(this.finalUrl).openConnection();
             mConn.setRequestMethod("GET");
-            mConn.setConnectTimeout(3 * 60 * 1000);
-            mConn.setReadTimeout(3 * 60 * 1000);
+            mConn.setConnectTimeout(60 * 1000);
+            mConn.setReadTimeout(60 * 1000);
             mConn.setDoInput(true);
             mConn.connect();
             mInput = new MessageInputStream(mConn.getInputStream());
@@ -156,11 +155,7 @@ public class ICometClient {
         }
         this.mStatus = State.STATE_COMET;
         mLogger.info("[comet]status change to [COMET]");
-
-        if (this.mSubThread == null) {
-            this.mSubThread = new SubThread();
-        }
-        this.mSubThread.start();
+        new SubThread().start();
 
     }
 
@@ -170,9 +165,6 @@ public class ICometClient {
     public void stopComet() {
         mStatus = State.STATE_STOP_PENDING;
         mLogger.info("[stopComet]status change to [STOP_PENDING]");
-        // 停止线程
-        this.mSubThread.interrupt();
-        this.mSubThread = null;
     }
 
     /**
