@@ -76,6 +76,7 @@ public class ICometClient {
 
     // 当前状态
     private int mStatus = State.STATE_NEW;
+    private SubThread mSubThread;
 
     /**
      * 准备连接
@@ -145,6 +146,19 @@ public class ICometClient {
 
     }
 
+    private void stopSubThread() {
+        if (this.mSubThread != null) {
+            this.mSubThread.interrupt();
+            this.mSubThread = null;
+        }
+    }
+
+    private void startSubThread() {
+        this.stopSubThread();
+        this.mSubThread = new SubThread();
+        this.mSubThread.start();;
+    }
+
     /**
      * 开启一个子线程进行数据传输
      */
@@ -155,7 +169,8 @@ public class ICometClient {
         }
         this.mStatus = State.STATE_COMET;
         mLogger.info("[comet]status change to [COMET]");
-        new SubThread().start();
+
+        this.startSubThread();
 
     }
 
@@ -165,6 +180,7 @@ public class ICometClient {
     public void stopComet() {
         mStatus = State.STATE_STOP_PENDING;
         mLogger.info("[stopComet]status change to [STOP_PENDING]");
+        this.stopSubThread();
     }
 
     /**
@@ -281,7 +297,6 @@ public class ICometClient {
 
         @Override
         public void run() {
-            super.run();
 
             if (mICometCallback == null) {
                 throw new IllegalArgumentException("There always should be an ICometCallback to deal with the coming data");
