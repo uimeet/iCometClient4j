@@ -192,6 +192,7 @@ public class ICometClient {
             mConn.disconnect();
             mConn = null;
         }
+        disconnect();
     }
 
     /**
@@ -360,12 +361,12 @@ public class ICometClient {
                 }
             } catch (TokenRefreshException tre) {
                 mLogger.info("[SubThread]Token Refreshed!");
-                disconnect();
+                stopConnect();
                 reconnect(true);
                 return;
             } catch (Exception e) {
                 e.printStackTrace();
-                disconnect();
+                stopConnect();
                 mLogger.info("[SubThread]status change to [DISCONNECT], reconnecting...");
                 reconnect();
                 return;
