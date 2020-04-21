@@ -1,16 +1,29 @@
 package com.starcultural.comet;
 
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.IOException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.util.Collections;
 import java.util.Timer;
 import java.util.TimerTask;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import com.google.gson.Gson;
 
 import com.google.gson.JsonSyntaxException;
 import com.starcultural.comet.message.Message;
-import com.starcultural.comet.message.MessageInputStream;
+
+import javax.net.ssl.SSLException;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.Request;
+import okhttp3.Response;
+import okio.BufferedSource;
 
 public class ICometClient {
 
@@ -66,8 +79,8 @@ public class ICometClient {
     private ICometCallback mICometCallback;
     private IConnectionCallback mIConnCallback;
 
-    private HttpURLConnection mConn;
-    private MessageInputStream mInput;
+    private OkHttpClient mHttpClient;
+    private Gson gson = new Gson();
 
     private ICometConf mConf;
 
@@ -76,7 +89,6 @@ public class ICometClient {
 
     // 当前状态
     private int mStatus = State.STATE_NEW;
-    private SubThread mSubThread;
 
     /**
      * 准备连接
@@ -102,97 +114,165 @@ public class ICometClient {
         mLogger.info("[prepare]status change to [READY], finalUrl: " + this.finalUrl);
     }
 
-    /**
-     * 连接服务端
-     * 请在子线程中调用该方法
-     */
     public void connect() {
-        mLogger.info("[connect]STATUS:" + this.mStatus);
-        if (this.mStatus != State.STATE_READY) {
-            return;
+        if (mHttpClient == null) {
+            mHttpClient = new OkHttpClient.Builder()
+                    .protocols(Collections.singletonList(Protocol.HTTP_1_1))
+                    .retryOnConnectionFailure(true)
+                    .pingInterval(3, TimeUnit.SECONDS)
+                    .connectTimeout(mConf.connectTimeout, TimeUnit.SECONDS)
+                    .readTimeout(mConf.readTimeout, TimeUnit.SECONDS)
+                    .writeTimeout(mConf.writeTimeout, TimeUnit.SECONDS)
+                    .build();
+        } else {
+            mHttpClient.dispatcher().cancelAll();
         }
+
+        Request request = new Request.Builder().url(this.finalUrl).build();
+        mHttpClient.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                disconnect();
+                mLogger.severe("[connect]" + e.getMessage());
+                if (mIConnCallback != null) {
+                    mIConnCallback.onFail(e.getMessage());
+
+                    if (e instanceof SocketTimeoutException) {
+                        mIConnCallback.onTimeout();
+                    }
+                }
+                if (!(e instanceof UnknownHostException)) {
+                    reconnect();
+                }
+
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                // 成功回调
+                if (mIConnCallback != null) {
+                    mStatus = State.STATE_CONNECTED;
+                    if (mReconnTimes == 0) {
+                        mIConnCallback.onSuccess();
+                    } else {
+                        mIConnCallback.onReconnectSuccess(mReconnTimes);
+                    }
+                    mReconnTimes = 0;
+                }
+
+                BufferedSource source = response.body().source();
+                try {
+                    while (!source.exhausted()) {
+                        String s = source.readUtf8Line();
+                        onMessageArrived(s);
+                    }
+                } catch (Exception e) {
+                    mLogger.severe("[onResponse]Error: " + e.getMessage());
+                    if (mIConnCallback != null) {
+                        if (e instanceof SSLException) {
+                            // 可能是网络变化造成
+                            mIConnCallback.onNetworkChanged();
+                        } else if (e instanceof SocketTimeoutException) {
+                            // 连接超时
+                            mIConnCallback.onTimeout();
+                        } else if (e instanceof SocketException && e.getMessage() != null && e.getMessage().equals("Socket closed")) {
+                            // 不再重连
+                            return;
+                        } else {
+                            mIConnCallback.onFail(e.getMessage());
+                        }
+                    }
+                    disconnect();
+                    reconnect();
+                } finally {
+                    source.close();
+                    call.cancel();
+                }
+            }
+        });
+    }
+
+    private void onMessageArrived(String messageContent) {
+        if (mICometCallback == null) {
+            throw new IllegalArgumentException("There always should be an ICometCallback to deal with the coming data");
+        }
+
         try {
-            mConn = (HttpURLConnection) new URL(this.finalUrl).openConnection();
-            mConn.setRequestMethod("GET");
-            mConn.setConnectTimeout(60 * 1000);
-            mConn.setReadTimeout(60 * 1000);
-            mConn.setDoInput(true);
-            mConn.connect();
-            mInput = new MessageInputStream(mConn.getInputStream());
+            Message msg = gson.fromJson(messageContent, Message.class);
 
-        } catch (Exception e) {
-            mLogger.severe("[connect]" + e.getMessage());
-            if (mConn != null) {
-                mConn.disconnect();
-            }
-            if (mIConnCallback != null) {
-                mIConnCallback.onFail(e.getMessage());
-            }
-            reconnect();
-            return;
-        }
+            if (msg != null) {
+                mLogger.info("[onMessageArrived]" + msg);
+                // 消息到达回调
+                mICometCallback.onMsgArrived(msg);
 
-        this.mStatus = State.STATE_CONNECTED;
-        mLogger.info("[connect]status change to [CONNECTED]");
+                switch (msg.type) {
+                    case Message.Type.TYPE_BROADCAST:
+                    case Message.Type.TYPE_DATA:
+                        // 递增消息位置
+                        //mChannel.seq = Integer.parseInt(msg.seq);
 
-        if (mIConnCallback != null) {
-            if (mReconnTimes == 0) {
-                mIConnCallback.onSuccess();
+                        try {
+                            // 解析消息内容
+                            Message.Content content = gson.fromJson(msg.content, Message.Content.class);// 数据消息回调
+                            mICometCallback.onDataMsgArrived(content);
+                        } catch (JsonSyntaxException jse) {
+                            mICometCallback.onMsgFormatError(msg);
+                        }
+                        break;
+                    case Message.Type.TYPE_NEXT_SEQ:
+                    case Message.Type.TYPE_NOOP:
+                        // 心跳消息，不需要做任何处理
+                        break;
+                    case Message.Type.TYPE_401:
+                        mLogger.warning("[onMessageArrived]token expired, renew...");
+                        // TOKEN 无效错误
+                        String token = mICometCallback.onUnAuthorizedErrorMsgArrived();
+                        if (!isEmpty(token)) {
+                            // 设置新的token
+                            mChannel.token = token;
+                        }
+                        break;
+                    default:
+                        // 错误消息回调
+                        mICometCallback.onErrorMsgArrived(msg);
+                        break;
+                }
+
             } else {
-                mIConnCallback.onReconnectSuccess(mReconnTimes);
-                mReconnTimes = 0;
+                // TODO error data
+                mLogger.info("[SubThread]msg is null, reconnect...");
+                disconnect();
+                reconnect();
             }
+        } catch (Exception e) {
+            mLogger.info("[SubThread]status change to [DISCONNECT], reconnecting...");
+            e.printStackTrace();
+            disconnect();
+            reconnect();
         }
 
     }
 
-    private void stopSubThread() {
-        if (this.mSubThread != null) {
-            this.mSubThread.interrupt();
-            this.mSubThread = null;
+    private void stopAllRequests() {
+        if (mHttpClient != null) {
+            mHttpClient.dispatcher().cancelAll();
         }
     }
 
-    private void startSubThread() {
-        this.stopSubThread();
-        this.mSubThread = new SubThread();
-        this.mSubThread.start();;
-    }
-
-    /**
-     * 开启一个子线程进行数据传输
-     */
-    public void comet() {
-        mLogger.info("[comet]STATUS: " + this.mStatus);
-        if (this.mStatus != State.STATE_CONNECTED) {
-            return;
-        }
-        this.mStatus = State.STATE_COMET;
-        mLogger.info("[comet]status change to [COMET]");
-
-        this.startSubThread();
-
-    }
-
-    /**
-     * 停止 comet 操作
-     */
-    public void stopComet() {
-        mStatus = State.STATE_STOP_PENDING;
-        mLogger.info("[stopComet]status change to [STOP_PENDING]");
-        this.stopSubThread();
+    public void stopConnect() {
+        stopConnect(true);
     }
 
     /**
      * 断开与服务端的连接
      */
-    public void stopConnect() {
-        if (mConn != null) {
-            mLogger.info("[stopConnect]disconnect");
-            mConn.disconnect();
-            mConn = null;
+    public void stopConnect(boolean callOnStop) {
+        mStatus = State.STATE_STOP_PENDING;
+        stopAllRequests();
+        mStatus = State.STATE_STOP;
+        if (callOnStop && mIConnCallback != null) {
+            mIConnCallback.onStop();
         }
-        disconnect();
     }
 
     /**
@@ -204,7 +284,7 @@ public class ICometClient {
         return mStatus;
     }
 
-    private void reconnect() {
+    public void reconnect() {
         reconnect(false);
     }
 
@@ -213,16 +293,16 @@ public class ICometClient {
      *
      * @param immediate 是否立即重连
      */
-    private void reconnect(boolean immediate) {
+    public void reconnect(boolean immediate) {
         mLogger.info("[reconnect]call");
         if (mIConnCallback == null) {
             mLogger.info("[mIConnCallback == null]exit reconnect");
             return;
         }
-//        if (mStatus == State.STATE_DISCONNECT) {
-//            mLogger.info("[mStats == State.STATE_DISCONNECT] exit reconnect");
-//            return;
-//        }
+        if (mStatus == State.STATE_CONNECTED) {
+            mLogger.info("[reconnect]mStatus == State.STATE_CONNECTED");
+            return;
+        }
 
         TimerTask task = new TimerTask() {
 
@@ -252,9 +332,11 @@ public class ICometClient {
      * 断开连接
      */
     private void disconnect() {
-        mStatus = ICometClient.State.STATE_DISCONNECT;
-        if (mIConnCallback != null) {
-            mIConnCallback.onDisconnect();
+        if (mStatus != State.STATE_DISCONNECT) {
+            mStatus = ICometClient.State.STATE_DISCONNECT;
+            if (mIConnCallback != null) {
+                mIConnCallback.onDisconnect();
+            }
         }
     }
 
@@ -288,99 +370,6 @@ public class ICometClient {
     }
 
     /**
-     * 接受服务端消息的子线程
-     *
-     * @author keyleduo
-     */
-    private class SubThread extends Thread {
-
-        private Gson gson = new Gson();
-
-        @Override
-        public void run() {
-
-            if (mICometCallback == null) {
-                throw new IllegalArgumentException("There always should be an ICometCallback to deal with the coming data");
-            }
-
-            try {
-                // 强行退出循环标记
-                boolean exitLoop = false;
-                while (mStatus == ICometClient.State.STATE_COMET && !exitLoop) {
-                    // 这里会发生阻塞
-                    Message msg = mInput.readMessage();
-
-                    if (msg != null) {
-
-                        mLogger.info("[SubThread]" + msg);
-                        // 消息到达回调
-                        mICometCallback.onMsgArrived(msg);
-
-                        switch (msg.type) {
-                            case Message.Type.TYPE_BROADCAST:
-                            case Message.Type.TYPE_DATA:
-                                // 递增消息位置
-                                mChannel.seq++;
-
-                                try {
-                                    // 解析消息内容
-                                    Message.Content content = gson.fromJson(msg.content, Message.Content.class);// 数据消息回调
-                                    mICometCallback.onDataMsgArrived(content);
-                                } catch (JsonSyntaxException jse) {
-                                    mICometCallback.onMsgFormatError(msg);
-                                }
-                                break;
-                            case Message.Type.TYPE_NEXT_SEQ:
-                            case Message.Type.TYPE_NOOP:
-                                // 心跳消息，不需要做任何处理
-                                break;
-                            case Message.Type.TYPE_401:
-                                mLogger.warning("[SubThread]token expired, renew...");
-                                // TOKEN 无效错误
-                                String token = mICometCallback.onUnAuthorizedErrorMsgArrived();
-                                if (!isEmpty(token)) {
-                                    // 设置新的token
-                                    mChannel.token = token;
-                                    // 抛出一个 TokenRefresh 异常以激活重连
-                                    throw new TokenRefreshException();
-                                } else {
-                                    // 强制退出循环了
-                                    exitLoop = true;
-                                }
-                                break;
-                            default:
-                                // 错误消息回调
-                                mICometCallback.onErrorMsgArrived(msg);
-                                break;
-                        }
-
-                    } else {
-                        // TODO error data
-
-                    }
-                }
-            } catch (TokenRefreshException tre) {
-                mLogger.info("[SubThread]Token Refreshed!");
-                stopConnect();
-                reconnect(true);
-                return;
-            } catch (Exception e) {
-                e.printStackTrace();
-                stopConnect();
-                mLogger.info("[SubThread]status change to [DISCONNECT], reconnecting...");
-                reconnect();
-                return;
-            }
-
-            mStatus = ICometClient.State.STATE_STOP;
-            mLogger.info("[SubThread]status change to [STOP]");
-            if (mIConnCallback != null) {
-                mIConnCallback.onStop();
-            }
-        }
-    }
-
-    /**
      * 判断给定字符串是否为空
      *
      * @param source
@@ -391,16 +380,6 @@ public class ICometClient {
             return true;
         }
         return false;
-    }
-
-
-    /**
-     * Token 刷新异常
-     */
-    public static class TokenRefreshException extends Exception {
-        public TokenRefreshException() {
-            super("Token refresh");
-        }
     }
 
 }

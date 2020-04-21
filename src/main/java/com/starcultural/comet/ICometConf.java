@@ -9,6 +9,10 @@ public class ICometConf {
     public String url;
     public boolean enableSSL;
 
+    public int connectTimeout = 30;
+    public int readTimeout = 40;
+    public int writeTimeout = 30;
+
     public IChannelAllocator channelAllocator;
     public ICometCallback iCometCallback;
     public IConnectionCallback iConnCallback;

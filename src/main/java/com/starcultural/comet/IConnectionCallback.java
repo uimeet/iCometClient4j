@@ -12,6 +12,16 @@ public interface IConnectionCallback {
     void onFail(String msg);
 
     /**
+     * 连接网络发生变化时，读取数据异常后回调
+     */
+    void onNetworkChanged();
+
+    /**
+     * 超时回调
+     */
+    void onTimeout();
+
+    /**
      * 连接 Comet 服务端成功时回调
      */
     void onSuccess();
