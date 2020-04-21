@@ -67,6 +67,10 @@ public class ICometClient {
          * 当服务端返回401错误时
          */
         int STATE_401 = 7;
+        /**
+         * 重连中
+         */
+        int STATE_RECONNECTING = 8;
     }
 
     private static final String TAG = "Comet.Client";
@@ -154,12 +158,12 @@ public class ICometClient {
                         mIConnCallback.onTimeout();
                     }
                 }
-//                String error = e.getMessage();
-//                if (!(e instanceof UnknownHostException) && !e.getMessage().equals("Canceled") && !endErrors.contains(error)) {
-//                    reconnect();
-//                } else {
-//                    onStop();
-//                }
+                String error = e.getMessage();
+                if (!error.equals("Canceled") && !endErrors.contains(error)) {
+                    reconnect();
+                } else {
+                    onStop();
+                }
 
             }
 
@@ -167,7 +171,7 @@ public class ICometClient {
             public void onResponse(Call call, Response response) throws IOException {
                 // 成功回调
                 if (mIConnCallback != null) {
-                    mStatus = State.STATE_CONNECTED;
+                    setStatus(State.STATE_CONNECTED);
                     if (mReconnTimes == 0) {
                         mIConnCallback.onSuccess();
                     } else {
@@ -249,7 +253,7 @@ public class ICometClient {
                     // 心跳消息，不需要做任何处理
                     break;
                 case Message.Type.TYPE_401:
-                    mStatus = State.STATE_401;
+                    setStatus(State.STATE_401);
                     mLogger.warning("[onMessageArrived]token expired, renew...");
                     // TOKEN 无效错误
                     String token = mICometCallback.onUnAuthorizedErrorMsgArrived();
@@ -289,16 +293,16 @@ public class ICometClient {
      * 断开与服务端的连接
      */
     public void stopConnect(boolean callOnStop) {
-        mStatus = State.STATE_STOP_PENDING;
+        setStatus(State.STATE_STOP_PENDING);
         stopAllRequests();
-        mStatus = State.STATE_STOP;
+        setStatus(State.STATE_STOP);
         if (callOnStop) {
-            //onStop();
+            onStop();
         }
     }
 
     private void onStop() {
-        mStatus = State.STATE_STOP;
+        setStatus(State.STATE_STOP);
         if (mIConnCallback != null) {
             mIConnCallback.onStop();
         }
@@ -313,9 +317,18 @@ public class ICometClient {
         return mStatus;
     }
 
+    private synchronized boolean setStatus(int status) {
+        if (mStatus != status) {
+            mStatus = status;
+            return true;
+        }
+        return false;
+    }
+
     public void reconnect() {
         reconnect(false);
     }
+
 
     /**
      * 当连接丢失或发生错误时重连服务端
@@ -323,6 +336,12 @@ public class ICometClient {
      * @param immediate 是否立即重连
      */
     public void reconnect(boolean immediate) {
+
+        if (!setStatus(State.STATE_RECONNECTING)) {
+            mLogger.info("[reconnect] status is reconnecting");
+            return;
+        }
+
         mLogger.info("[reconnect]call");
         if (mIConnCallback == null) {
             mLogger.info("[mIConnCallback == null]exit reconnect");
@@ -364,7 +383,7 @@ public class ICometClient {
      */
     private void disconnect() {
         if (mStatus != State.STATE_DISCONNECT) {
-            mStatus = ICometClient.State.STATE_DISCONNECT;
+            setStatus(State.STATE_DISCONNECT);
             if (mIConnCallback != null) {
                 mIConnCallback.onDisconnect();
             }

@@ -2,6 +2,8 @@ package com.starcultural.comet;
 
 import com.starcultural.comet.message.Message;
 
+import java.io.IOException;
+
 public interface ICometCallback {
 
     /**
