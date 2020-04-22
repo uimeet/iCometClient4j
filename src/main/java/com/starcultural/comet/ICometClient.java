@@ -64,10 +64,6 @@ public class ICometClient {
          */
         int STATE_DISCONNECT = 6;
         /**
-         * 当服务端返回401错误时
-         */
-        int STATE_401 = 7;
-        /**
          * 重连中
          */
         int STATE_RECONNECTING = 8;
@@ -97,6 +93,7 @@ public class ICometClient {
     private List<String> endErrors = Arrays.asList(new String[] {
             "Socket closed",
             "Socket is closed",
+            "Canceled"
     });
 
     private ICometConf mConf;
@@ -159,10 +156,8 @@ public class ICometClient {
                     }
                 }
                 String error = e.getMessage();
-                if (!error.equals("Canceled") && !endErrors.contains(error)) {
+                if (!endErrors.contains(error)) {
                     reconnect();
-                } else {
-                    onStop();
                 }
 
             }
@@ -183,17 +178,18 @@ public class ICometClient {
                 BufferedSource source = response.body().source();
                 try {
                     while (!source.exhausted()) {
-                        String s = source.readUtf8Line();
-                        if (response.code() == 200) {
-                            onMessageArrived(s);
-                        } else {
+                        if (response.code() != 200) {
                             mLogger.severe("[onResponse]status_code = " + Integer.toString(response.code()));
+                            break;
+                        }
+
+                        String s = source.readUtf8Line();
+                        if (!onMessageArrived(s)) {
                             break;
                         }
                     }
                     mLogger.info("[onResponse]end for " + Integer.toString(mStatus));
                     if (mStatus == State.STATE_CONNECTED) {
-                        onStop();
                         reconnect();
                     }
                 } catch (Exception e) {
@@ -205,7 +201,7 @@ public class ICometClient {
                         } else if (e instanceof SocketTimeoutException) {
                             // 连接超时
                             mIConnCallback.onTimeout();
-                        } else if (e instanceof SocketException && e.getMessage() != null && endErrors.contains(e.getMessage())) {
+                        } else if (endErrors.contains(e.getMessage())) {
                             // 不再重连
                             return;
                         } else {
@@ -222,7 +218,14 @@ public class ICometClient {
         });
     }
 
-    private void onMessageArrived(String messageContent) {
+    /**
+     * 处理消息到达
+     * @param messageContent 消息内容
+     * @return 是否继续获取数据
+     *          true 继续获取
+     *          false 退出获取
+     */
+    private boolean onMessageArrived(String messageContent) {
         if (mICometCallback == null) {
             throw new IllegalArgumentException("There always should be an ICometCallback to deal with the coming data");
         }
@@ -253,15 +256,13 @@ public class ICometClient {
                     // 心跳消息，不需要做任何处理
                     break;
                 case Message.Type.TYPE_401:
-                    setStatus(State.STATE_401);
                     mLogger.warning("[onMessageArrived]token expired, renew...");
                     // TOKEN 无效错误
                     String token = mICometCallback.onUnAuthorizedErrorMsgArrived();
                     if (!isEmpty(token)) {
                         // 设置新的token
                         mChannel.token = token;
-                        disconnect();
-                        reconnect();
+                        return false;
                     }
                     break;
                 default:
@@ -269,12 +270,12 @@ public class ICometClient {
                     mICometCallback.onErrorMsgArrived(msg);
                     break;
             }
+            return true;
 
         } else {
             // TODO error data
             mLogger.info("[SubThread]msg is null, reconnect...");
-            disconnect();
-            reconnect();
+            return false;
         }
 
     }
