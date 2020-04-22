@@ -1,10 +1,7 @@
 package com.starcultural.comet;
 
 import java.io.IOException;
-import java.lang.reflect.Array;
-import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
